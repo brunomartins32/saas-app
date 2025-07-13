@@ -58,7 +58,7 @@ pipeline {
                     appImage.run("-d --name ${SPRING_BOOT_APP_NAME} -p 8080:8080")
 
                     echo "Aplicação ${SPRING_BOOT_APP_NAME} deployada no Docker local na VM."
-                    echo "Acesse em http://${env.NODE_IP}:8080 (substitua NODE_IP pelo IP da sua VM)."
+                    echo "Acesse em http://${env.NODE_IP}:8611 (substitua NODE_IP pelo IP da sua VM)."
                 }
             }
         }
