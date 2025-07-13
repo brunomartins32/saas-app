@@ -10,6 +10,12 @@ pipeline {
     }
 
     stages {
+        stage('Compilar Aplicação e Rodar Testes Unitários') {
+            steps {
+               sh 'mvn clean install'
+            }
+        }
+
         stage('Build') {
             steps {
                 script {
