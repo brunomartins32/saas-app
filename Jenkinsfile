@@ -2,84 +2,52 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE_NAME = "saas-app"
-        CONTAINER_NAME = "saas-app-dev"
-        APP_PORT = "8611"    // Porta do container
-        HOST_PORT = "8611"   // Porta no host (evita conflito com Jenkins)
+        // Configurações fixas
+        APP_IMAGE = "saas-app"
+        APP_CONTAINER = "saas-app-prod"  // Nome do container de produção
+        CONTAINER_PORT = "8611"         // Porta interna do container (onde sua app roda)
+        HOST_PORT = "8611"              // Porta fixa no host que você quer usar
     }
 
     stages {
-        stage('Checkout do Código') {
-            steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    extensions: [],
-                    userRemoteConfigs: [[url: 'https://github.com/brunomartins32/saas-app.git']]
-                ])
-            }
-        }
-
-        stage('Build e Testes') {
-            steps {
-                sh 'mvn clean package'
-            }
-        }
-
-        stage('Construir Imagem Docker') {
+        stage('Build') {
             steps {
                 script {
-                    docker.build("${DOCKER_IMAGE_NAME}:${env.BUILD_ID}")
+                    // Constroi a imagem Docker
+                    docker.build("${APP_IMAGE}:${env.BUILD_ID}")
                 }
             }
         }
 
-        stage('Deploy Local') {
+        stage('Deploy') {
             steps {
                 script {
-                    // Parar e remover container existente
-                    sh "docker stop ${CONTAINER_NAME} || true"
-                    sh "docker rm ${CONTAINER_NAME} || true"
+                    // 1. Para e remove o container existente (se houver)
+                    sh """
+                        docker stop ${APP_CONTAINER} || true
+                        docker rm ${APP_CONTAINER} || true
+                    """
 
-                    // Iniciar novo container com fallback de porta
-                    def port = HOST_PORT
-                    def maxRetries = 3
+                    // 2. Implanta em um NOVO container na porta 8611
+                    sh """
+                        docker run -d \
+                          --name ${APP_CONTAINER} \
+                          -p ${HOST_PORT}:${CONTAINER_PORT} \  # Mapeia 8611→8080
+                          --network my-network \  # Rede personalizada (opcional)
+                          --restart unless-stopped \
+                          ${APP_IMAGE}:${env.BUILD_ID}
+                    """
 
-                    while (maxRetries > 0) {
-                        try {
-                            docker.run(
-                                "${DOCKER_IMAGE_NAME}:${env.BUILD_ID}",
-                                "--name ${CONTAINER_NAME} -d -p ${port}:${APP_PORT} --restart unless-stopped"
-                            )
-                            echo "✅ Aplicação rodando na porta ${port}"
-                            break
-                        } catch (err) {
-                            echo "⚠️ Porta ${port} ocupada, tentando próxima..."
-                            sh "docker stop ${CONTAINER_NAME} || true"
-                            sh "docker rm ${CONTAINER_NAME} || true"
-                            port = (port as int) + 1
-                            maxRetries--
-                        }
-                    }
-
-                    if (maxRetries == 0) {
-                        error("❌ Todas as portas tentadas estão ocupadas")
-                    }
+                    echo "✅ Aplicação rodando em: http://${env.NODE_IP}:${HOST_PORT}"
                 }
             }
         }
     }
 
     post {
-        always {
-            cleanWs()
-        }
-        success {
-            echo "🚀 Deploy realizado com sucesso!"
-            echo "🔗 Acesse: http://localhost:${port}"
-        }
         failure {
-            echo "❌ Pipeline falhou - Verifique os logs"
+            echo "❌ Falha no deploy - Verifique os logs com:"
+            echo "docker logs ${APP_CONTAINER}"
         }
     }
 }
